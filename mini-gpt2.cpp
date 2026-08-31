@@ -159,18 +159,43 @@ std::vector<float> get_embeddings(const mgpt2_model& model, const std::vector<in
 }
 
 
+std::vector<int> tokenize(const std::string& text) {
+    std::vector<int> tokens;
+
+    for (char x : text) {        
+        int token_id;
+        if (x == ' ') {
+            token_id = 26;
+        } else {
+            token_id = x - 'a';
+        }
+        tokens.push_back(token_id);
+    }
+    return tokens;
+}
+
+
 int main() {
     mgpt2_model model;
 
     initialize_model(model);
 
-    std::vector<int> tokens = {2, 5};
+    std::string text;
+    std::getline(std::cin, text);
 
-    std::vector<float> embeddings = get_embeddings(model, tokens);
-
-    for (float x: embeddings) {
-        std::cout << x << " ";
+    std::vector<int> tokens = tokenize(text); 
+    
+    std::cout << "Number of tokens: " << tokens.size() << "\n";
+    for (int token: tokens) {
+        std::cout<< token << " ";
     }
+    //std::vector<int> tokens = {2, 5};
+
+    //std::vector<float> embeddings = get_embeddings(model, tokens);
+
+    //for (float x: embeddings) {
+    //    std::cout << x << " ";
+    //}
     std::cout << "\n";
 
     return 0;
