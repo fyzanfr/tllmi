@@ -9,6 +9,7 @@
 #include <random> 
 #include <algorithm>
 #include <iostream>
+#include <numeric> 
 
 // define hparams for miniGPT
 struct mgpt2_hparams {
@@ -158,7 +159,7 @@ std::vector<float> get_embeddings(const mgpt2_model& model, const std::vector<in
     return final_embeddings;
 }
 
-
+// tokenizer
 std::vector<int> tokenize(const std::string& text) {
     std::vector<int> tokens;
 
@@ -174,13 +175,57 @@ std::vector<int> tokenize(const std::string& text) {
     return tokens;
 }
 
+// layernorm
+std::vector<float> layer_norm(
+        const std::vector<float>& input, 
+        const std::vector<float>& gamma, 
+        const std::vector<float>& beta, 
+        int n_embd,
+        float eps
+        ){
+
+    int num_tokens = input.size() / n_embd;
+    std::vector<float> output(input.size());
+    
+    for (int pos = 0; pos < num_tokens; pos ++){
+        // mean 
+        float sum = 0.0f;
+        for (int i = 0; i < n_embd; i++){
+            sum += input[pos * n_embd + i];
+        }
+
+        float mean = sum / n_embd;
+
+        //variance
+        float variance = 0.0f;
+
+        for (int i = 0; i < n_embd; i++){
+            float diff = input[pos * n_embd + i] - mean;
+            variance += diff * diff;
+        }
+        variance /= n_embd;
+
+
+        //normalize 
+        for (int i = 0; i < n_embd; i++){
+            float normalize = (input[pos * n_embd + i] - mean) / std::sqrt(variance + eps);
+            output[pos * n_embd + i] = normalize * gamma[i] + beta[i];
+        }
+    } 
+
+    return output;
+
+}
+
+
+
 
 int main() {
     mgpt2_model model;
 
     initialize_model(model);
 
-    std::string text;
+    /** std::string text;
     std::getline(std::cin, text);
 
     std::vector<int> tokens = tokenize(text); 
@@ -189,14 +234,40 @@ int main() {
     for (int token: tokens) {
         std::cout<< token << " ";
     }
-    //std::vector<int> tokens = {2, 5};
+    std::vector<int> tokens = {2, 5};
 
-    //std::vector<float> embeddings = get_embeddings(model, tokens);
+    std::vector<float> embeddings = get_embeddings(model, tokens);
 
-    //for (float x: embeddings) {
-    //    std::cout << x << " ";
-    //}
+    for (float x: embeddings) {
+        std::cout << x << " ";
+    }
     std::cout << "\n";
+    **/ 
+
+    std::vector<float> input = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        10.0f, 20.0f, 30.0f, 40.0f
+    };
+
+    // LayerNorm parameters
+    std::vector<float> gamma(4, 1.0f);
+    std::vector<float> beta(4, 0.0f);
+
+    float eps = 1e-5f;
+
+    std::vector<float> output =
+        layer_norm(input, gamma, beta, 4, eps);
+
+    // Print results
+    for (int pos = 0; pos < 2; pos++) {
+        std::cout << "Token " << pos << ": ";
+
+        for (int i = 0; i < 4; i++) {
+            std::cout << output[pos * 4 + i] << " ";
+        }
+
+        std::cout << "\n";
+    }
 
     return 0;
 }
