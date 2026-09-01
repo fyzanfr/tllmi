@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <functional>
+#include <stdexcept>
 #include <vector>
 #include <string> 
 #include <fstream> 
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <iostream>
 #include <numeric> 
+#include <stdexcept>
 
 // define hparams for miniGPT
 struct mgpt2_hparams {
@@ -217,7 +219,47 @@ std::vector<float> layer_norm(
 
 }
 
+struct Matrix {
+    int rows;
+    int cols;
+    std::vector<float> data;
 
+    Matrix(int r, int c):
+        rows(r), cols(c), data(r * c) {}
+};
+
+
+Matrix matmul(const Matrix& A, Matrix& B){
+    Matrix C(A.rows, B.cols);
+
+    if (A.rows != B.cols){
+        throw std::runtime_error("matrix dimensions doesn't match");
+    }
+
+    for (int row = 0; row < A.rows; row++){
+        for (int col = 0; col < B.cols; col++){
+            float sum = 0.0f;
+            for (int i = 0; i < A.cols; i++){
+                sum += A.data[row * A.cols + i] * B.data[i * B.cols + col];
+            }
+            C.data[row * C.cols + col] = sum;
+        }
+    }
+    return C;
+}
+
+/**
+
+std::vector<float> self_attention(
+        const std::vector<float>& input,
+        const mgpt2_layer& layer,
+        int n_heads,
+        int n_embds
+    ) {
+
+}
+
+**/
 
 
 int main() {
@@ -242,7 +284,6 @@ int main() {
         std::cout << x << " ";
     }
     std::cout << "\n";
-    **/ 
 
     std::vector<float> input = {
         1.0f, 2.0f, 3.0f, 4.0f,
@@ -268,6 +309,30 @@ int main() {
 
         std::cout << "\n";
     }
+    **/ 
+    Matrix A(2, 2);
+    Matrix B(2, 2);
+
+    A.data = {
+        1, 2,
+        3, 4 
+    };
+
+    B.data = {
+        5, 6,
+        7, 8
+    };
+
+    Matrix C = matmul(A, B);
+
+    for (int row = 0; row < C.rows; row++) {
+        for (int col = 0; col < C.cols; col++) {
+            std::cout << C.data[row * C.cols + col] << " ";
+        }
+
+        std::cout << "\n";
+    }
+
 
     return 0;
 }
