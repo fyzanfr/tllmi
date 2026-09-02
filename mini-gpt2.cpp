@@ -13,6 +13,67 @@
 #include <numeric> 
 #include <stdexcept>
 
+
+struct Matrix {
+    int rows;
+    int cols;
+    std::vector<float> data;
+
+    Matrix() = default;
+
+    Matrix(int r, int c):
+        rows(r), cols(c), data(r * c) {}
+};
+
+
+Matrix matmul(const Matrix& A, const Matrix& B){
+    Matrix C(A.rows, B.cols);
+
+    if (A.cols != B.rows){
+        throw std::runtime_error("matrix dimensions doesn't match");
+    }
+
+    for (int row = 0; row < A.rows; row++){
+        for (int col = 0; col < B.cols; col++){
+            float sum = 0.0f;
+            for (int i = 0; i < A.cols; i++){
+                sum += A.data[row * A.cols + i] * B.data[i * B.cols + col];
+            }
+            C.data[row * C.cols + col] = sum;
+        }
+    }
+    return C;
+}
+
+Matrix split_head(const Matrix& A, int head, int n_heads) {
+    int head_dim = A.cols / n_heads;
+    int head_offset = head *  head_dim;
+
+    Matrix A_head(A.rows, head_dim);
+
+    for (int row = 0; row < A.rows; row++) {
+        for (int i = 0; i < head_dim; i++) {
+            A_head.data[row * head_dim + i] = 
+                A.data[row * A.cols + head_offset + i];
+        }
+    }
+    return A_head;
+}
+
+Matrix transpose(const Matrix& A) {
+    Matrix B(A.cols, A.rows);
+
+    for (int row = 0; row < A.rows; row++) {
+        for (int col = 0; col < A.cols; col++) {
+            B.data[col * B.cols + row] =
+                A.data[row * A.cols + col];
+        }
+    }
+
+    return B;
+}
+
+
 // define hparams for miniGPT
 struct mgpt2_hparams {
     int32_t n_vocab  = 1000;
@@ -33,15 +94,15 @@ struct mgpt2_layer {
     std::vector<float> ln_2_b;
 
     // Attention 
-    std::vector<float> wq;
-    std::vector<float> wk;
-    std::vector<float> wv;
-    std::vector<float> wo;
+    Matrix wq;
+    Matrix wk;
+    Matrix wv;
+    Matrix wo;
 
     // Feed Forward
-    std::vector<float> w_fc;
+    Matrix w_fc;
     std::vector<float> b_fc;
-    std::vector<float> w_proj;
+    Matrix w_proj;
     std::vector<float> b_proj;
     
 };
@@ -74,6 +135,12 @@ void init_weights(std::vector<float>& weights) {
     }
 }
 
+void init_weights(Matrix& weights) {
+    for (float& x: weights.data) {
+        x = dist(gen);
+    }
+}
+
 void initialize_model(mgpt2_model& model) {
 
     // token embedding 
@@ -93,15 +160,15 @@ void initialize_model(mgpt2_model& model) {
         model.layers[i].ln_2_b.resize(model.hparams.n_embd);
 
 
-        model.layers[i].wq.resize(model.hparams.n_embd * model.hparams.n_embd);
-        model.layers[i].wk.resize(model.hparams.n_embd * model.hparams.n_embd);
-        model.layers[i].wv.resize(model.hparams.n_embd * model.hparams.n_embd);
-        model.layers[i].wo.resize(model.hparams.n_embd * model.hparams.n_embd);
+        model.layers[i].wq = Matrix(model.hparams.n_embd, model.hparams.n_embd);
+        model.layers[i].wk = Matrix(model.hparams.n_embd, model.hparams.n_embd);
+        model.layers[i].wv = Matrix(model.hparams.n_embd, model.hparams.n_embd);
+        model.layers[i].wo = Matrix(model.hparams.n_embd, model.hparams.n_embd);
 
-        model.layers[i].w_fc.resize(model.hparams.n_embd * 4 * model.hparams.n_embd);
+        model.layers[i].w_fc = Matrix(model.hparams.n_embd, 4 * model.hparams.n_embd);
         model.layers[i].b_fc.resize(4 * model.hparams.n_embd);
 
-        model.layers[i].w_proj.resize(4 * model.hparams.n_embd * model.hparams.n_embd);
+        model.layers[i].w_proj = Matrix(4 * model.hparams.n_embd, model.hparams.n_embd);
         model.layers[i].b_proj.resize(model.hparams.n_embd);
 
     }
@@ -219,63 +286,6 @@ std::vector<float> layer_norm(
 
 }
 
-struct Matrix {
-    int rows;
-    int cols;
-    std::vector<float> data;
-
-    Matrix(int r, int c):
-        rows(r), cols(c), data(r * c) {}
-};
-
-
-Matrix matmul(const Matrix& A, Matrix& B){
-    Matrix C(A.rows, B.cols);
-
-    if (A.rows != B.cols){
-        throw std::runtime_error("matrix dimensions doesn't match");
-    }
-
-    for (int row = 0; row < A.rows; row++){
-        for (int col = 0; col < B.cols; col++){
-            float sum = 0.0f;
-            for (int i = 0; i < A.cols; i++){
-                sum += A.data[row * A.cols + i] * B.data[i * B.cols + col];
-            }
-            C.data[row * C.cols + col] = sum;
-        }
-    }
-    return C;
-}
-
-Matrix split_head(const Matrix& A, int head, int n_heads) {
-    int head_dim = A.cols / n_heads;
-    int head_offset = head *  head_dim;
-
-    Matrix A_head(A.rows, head_dim);
-
-    for (int row = 0; row < A.rows; row++) {
-        for (int i = 0; i < head_dim; i++) {
-            A_head.data[row * head_dim + i] = 
-                A.data[row * A.cols + head_offset + i];
-        }
-    }
-    return A_head;
-}
-
-Matrix transpose(const Matrix& A) {
-    Matrix B(A.cols, A.rows);
-
-    for (int row = 0; row < A.rows; row++) {
-        for (int col = 0; col < A.cols; col++) {
-            B.data[col * B.cols + row] =
-                A.data[row * A.cols + col];
-        }
-    }
-
-    return B;
-}
-
 Matrix self_attention(
         const Matrix& input,
         const mgpt2_layer& layer,
@@ -301,8 +311,18 @@ Matrix self_attention(
 
         for (float& x : scores.data) {
             x /= scale;
+        }
+
+        std::cout
+            << "Head " << head
+            << ": Q=" << Q_head.rows << "x" << Q_head.cols
+            << " K=" << K_head.rows << "x" << K_head.cols
+            << " V=" << V_head.rows << "x" << V_head.cols
+            << " scores=" << scores.rows << "x" << scores.cols
+            << "\n";
 
     }
+    return Q;
 }
 
 
@@ -313,72 +333,29 @@ int main() {
 
     initialize_model(model);
 
-    /** std::string text;
-    std::getline(std::cin, text);
+    int num_tokens = 5;
 
-    std::vector<int> tokens = tokenize(text); 
-    
-    std::cout << "Number of tokens: " << tokens.size() << "\n";
-    for (int token: tokens) {
-        std::cout<< token << " ";
+    Matrix input(
+        num_tokens,
+        model.hparams.n_embd
+    );
+
+    // Fill input with random values
+    for (float& x : input.data) {
+        x = dist(gen);
     }
-    std::vector<int> tokens = {2, 5};
 
-    std::vector<float> embeddings = get_embeddings(model, tokens);
+    Matrix output = self_attention(
+        input,
+        model.layers[0],
+        model.hparams.n_embd,
+        model.hparams.n_heads
+    );
 
-    for (float x: embeddings) {
-        std::cout << x << " ";
-    }
-    std::cout << "\n";
+    std::cout << "\nSelf-attention test complete!\n";
 
-    std::vector<float> input = {
-        1.0f, 2.0f, 3.0f, 4.0f,
-        10.0f, 20.0f, 30.0f, 40.0f
-    };
-
-    // LayerNorm parameters
-    std::vector<float> gamma(4, 1.0f);
-    std::vector<float> beta(4, 0.0f);
-
-    float eps = 1e-5f;
-
-    std::vector<float> output =
-        layer_norm(input, gamma, beta, 4, eps);
-
-    // Print results
-    for (int pos = 0; pos < 2; pos++) {
-        std::cout << "Token " << pos << ": ";
-
-        for (int i = 0; i < 4; i++) {
-            std::cout << output[pos * 4 + i] << " ";
-        }
-
-        std::cout << "\n";
-    }
-    **/ 
-    Matrix A(2, 2);
-    Matrix B(2, 2);
-
-    A.data = {
-        1, 2,
-        3, 4 
-    };
-
-    B.data = {
-        5, 6,
-        7, 8
-    };
-
-    Matrix C = matmul(A, B);
-
-    for (int row = 0; row < C.rows; row++) {
-        for (int col = 0; col < C.cols; col++) {
-            std::cout << C.data[row * C.cols + col] << " ";
-        }
-
-        std::cout << "\n";
-    }
 
 
     return 0;
+
 }
