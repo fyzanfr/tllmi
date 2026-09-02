@@ -286,6 +286,37 @@ std::vector<float> layer_norm(
 
 }
 
+
+Matrix softmax(const Matrix& scores) {
+    Matrix output(scores.rows, scores.cols);
+
+    for (int row = 0; row < scores.rows; row++){
+        float max_val = scores.data[row * scores.cols];
+        for (int col = 0; col < scores.cols; col++){
+            max_val = std::max(max_val, scores.data[row * scores.cols + col]);
+        }
+
+        for (int col = 0; col < scores.cols; col++){
+            output.data[row * output.cols + col] = scores.data[row * scores.cols + col] - max_val;
+        }
+
+        for (int col = 0; col < scores.cols; col++){
+            output.data[row * output.cols + col] = std::exp(output.data[row * output.cols + col]);
+        }
+
+        float sum = 0.0f;
+        for (int col = 0; col < scores.cols; col++) {
+            sum += output.data[row * output.cols + col];
+        }
+
+        for (int col = 0; col < scores.cols; col++) {
+            output.data[row * output.cols + col] /= sum;
+        }
+    }
+
+    return output;
+}
+
 Matrix self_attention(
         const Matrix& input,
         const mgpt2_layer& layer,
@@ -296,6 +327,8 @@ Matrix self_attention(
     Matrix Q = matmul(input, layer.wq);
     Matrix K = matmul(input, layer.wk);
     Matrix V = matmul(input, layer.wv);
+
+     Matrix combined(input.rows, n_embds);
 
     for (int head = 0; head < n_heads; head++){
 
@@ -313,16 +346,31 @@ Matrix self_attention(
             x /= scale;
         }
 
-        std::cout
-            << "Head " << head
-            << ": Q=" << Q_head.rows << "x" << Q_head.cols
-            << " K=" << K_head.rows << "x" << K_head.cols
-            << " V=" << V_head.rows << "x" << V_head.cols
-            << " scores=" << scores.rows << "x" << scores.cols
-            << "\n";
+        for (int row = 0; row < scores.rows; row++){
+            for (int col = 0; col < scores.cols; col++){
+                if (col > row) {
+                    scores.data[row * scores.cols + col] = -INFINITY;
+                }
+            }
+        }
 
+        Matrix attention_weights = softmax(scores);
+
+        Matrix at_out = matmul(attention_weights, V_head);
+
+        int head_offset = head * head_dim;
+       
+        for (int row = 0; row < at_out.rows; row++) {
+            for (int i = 0; i < head_dim; i++) {
+                combined.data[row * combined.cols + head_offset + i] =
+                    at_out.data[row * at_out.cols + i];
+            }
+        }
     }
-    return Q;
+
+    Matrix projected = matmul(combined, layer.wo);
+    
+    return projected;
 }
 
 
