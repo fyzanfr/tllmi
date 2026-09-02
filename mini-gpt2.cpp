@@ -248,18 +248,64 @@ Matrix matmul(const Matrix& A, Matrix& B){
     return C;
 }
 
-/**
+Matrix split_head(const Matrix& A, int head, int n_heads) {
+    int head_dim = A.cols / n_heads;
+    int head_offset = head *  head_dim;
 
-std::vector<float> self_attention(
-        const std::vector<float>& input,
-        const mgpt2_layer& layer,
-        int n_heads,
-        int n_embds
-    ) {
+    Matrix A_head(A.rows, head_dim);
 
+    for (int row = 0; row < A.rows; row++) {
+        for (int i = 0; i < head_dim; i++) {
+            A_head.data[row * head_dim + i] = 
+                A.data[row * A.cols + head_offset + i];
+        }
+    }
+    return A_head;
 }
 
-**/
+Matrix transpose(const Matrix& A) {
+    Matrix B(A.cols, A.rows);
+
+    for (int row = 0; row < A.rows; row++) {
+        for (int col = 0; col < A.cols; col++) {
+            B.data[col * B.cols + row] =
+                A.data[row * A.cols + col];
+        }
+    }
+
+    return B;
+}
+
+Matrix self_attention(
+        const Matrix& input,
+        const mgpt2_layer& layer,
+        int n_embds,
+        int n_heads
+    ) {
+
+    Matrix Q = matmul(input, layer.wq);
+    Matrix K = matmul(input, layer.wk);
+    Matrix V = matmul(input, layer.wv);
+
+    for (int head = 0; head < n_heads; head++){
+
+        Matrix Q_head = split_head(Q, head, n_heads);
+        Matrix K_head = split_head(K, head, n_heads);
+        Matrix V_head = split_head(V, head, n_heads);
+
+        Matrix K_head_T = transpose(K_head);
+        Matrix scores = matmul(Q_head, K_head_T);
+
+        int head_dim = n_embds / n_heads;
+        float scale = std::sqrt(static_cast<float>(head_dim));
+
+        for (float& x : scores.data) {
+            x /= scale;
+
+    }
+}
+
+
 
 
 int main() {
