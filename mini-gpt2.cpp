@@ -116,7 +116,7 @@ struct mgpt2_model {
 
     std::vector<float> wte; // token embedding
     std::vector<float> wpe; // positional embedding
-    std::vector<float> lm_head; // language model head 
+    Matrix lm_head; // language model head 
     
     std::vector<mgpt2_layer> layers;
 
@@ -178,7 +178,7 @@ void initialize_model(mgpt2_model& model) {
     model.ln_f_b.resize(model.hparams.n_embd);
 
     // language model head 
-    model.lm_head.resize(model.hparams.n_embd * model.hparams.n_vocab);
+    model.lm_head = Matrix(model.hparams.n_embd, model.hparams.n_vocab);
 
 
     // intialize weights 
@@ -244,23 +244,23 @@ std::vector<int> tokenize(const std::string& text) {
     return tokens;
 }
 
-// layernorm
-std::vector<float> layer_norm(
-        const std::vector<float>& input, 
+// layer_norm
+Matrix layer_norm(
+        const Matrix& input, 
         const std::vector<float>& gamma, 
         const std::vector<float>& beta, 
         int n_embd,
         float eps
         ){
 
-    int num_tokens = input.size() / n_embd;
-    std::vector<float> output(input.size());
+    int num_tokens = input.rows / n_embd;
+    Matrix output(input.rows, input.cols);
     
     for (int pos = 0; pos < num_tokens; pos ++){
         // mean 
         float sum = 0.0f;
         for (int i = 0; i < n_embd; i++){
-            sum += input[pos * n_embd + i];
+            sum += input.data[pos * n_embd + i];
         }
 
         float mean = sum / n_embd;
@@ -269,7 +269,7 @@ std::vector<float> layer_norm(
         float variance = 0.0f;
 
         for (int i = 0; i < n_embd; i++){
-            float diff = input[pos * n_embd + i] - mean;
+            float diff = input.data[pos * n_embd + i] - mean;
             variance += diff * diff;
         }
         variance /= n_embd;
@@ -277,8 +277,8 @@ std::vector<float> layer_norm(
 
         //normalize 
         for (int i = 0; i < n_embd; i++){
-            float normalize = (input[pos * n_embd + i] - mean) / std::sqrt(variance + eps);
-            output[pos * n_embd + i] = normalize * gamma[i] + beta[i];
+            float normalize = (input.data[pos * n_embd + i] - mean) / std::sqrt(variance + eps);
+            output.data[pos * n_embd + i] = normalize * gamma[i] + beta[i];
         }
     } 
 
@@ -373,36 +373,137 @@ Matrix self_attention(
     return projected;
 }
 
+Matrix add(const Matrix& A, const Matrix& B){
+    if (A.rows != B.rows || A.cols != B.cols) {
+        throw std::runtime_error("matrix dimension don't match");
+    }
+    
+    Matrix C(A.rows, B.cols);
+
+    for (int i = 0; i < A.data.size(); i++){
+        C.data[i] = A.data[i] + B.data[i];
+    }
+
+    return C;
+}
 
 
+void gelu( Matrix& input) {
+    for (float& x : input.data){
+        x = 0.05 * x * (1.0f + std::tanh(
+                    std::sqrt(2.0f / M_PI) * 
+                    (x + 0.044715f * x * x * x)
+                    )); 
+    }
+}
+
+
+Matrix forward(const Matrix& input, const mgpt2_model& model) {
+    Matrix x = input;
+
+    for (int i = 0; i < model.hparams.n_layers; i++){
+        const mgpt2_layer layer = model.layers[i];
+
+        // LayerNorm 
+        Matrix norm_1 = layer_norm(
+                x, 
+                layer.ln_1_g, 
+                layer.ln_1_b, 
+                model.hparams.n_embd, 
+                model.hparams.eps
+                );
+
+        // attention 
+        Matrix attention_out = self_attention(
+                norm_1, 
+                layer, 
+                model.hparams.n_embd, model.hparams.n_heads
+                );
+
+
+        // residual 1 
+        Matrix rs_1 = add(x, attention_out);
+
+        // LayerNorm 2 
+        Matrix norm_2 = layer_norm(
+                rs_1, 
+                layer.ln_2_g, 
+                layer.ln_2_b, 
+                model.hparams.n_embd, 
+                model.hparams.eps
+                );
+
+
+        // Feed Forward 
+        Matrix ff_hidden = matmul(
+                norm_2,
+                layer.w_fc
+                );
+
+        for (int row = 0; row < ff_hidden.rows; row++){
+            for (int col = 0; col < ff_hidden.cols; col++){
+                ff_hidden.data[row * ff_hidden.cols + col] += layer.b_fc[col];
+            }
+        }
+
+        gelu(ff_hidden);
+
+        Matrix ff_out = matmul(ff_hidden, layer.w_proj);
+
+        for (int row = 0; row < ff_out.rows; row++ ){
+            for (int col = 0; col < ff_out.cols; col++ ){
+                ff_out.data[row * ff_out.cols + col] += layer.b_proj[col];
+            }
+        }
+
+        // residual 
+        Matrix rs_2 = add(x, ff_out);
+        x = rs_2;
+
+    }
+
+    // LayerNorm 
+    Matrix ln_norm = layer_norm(
+            x,
+            model.ln_f_g,
+            model.ln_f_b,
+            model.hparams.n_embd,
+            model.hparams.eps
+            );
+
+
+    // language-model head 
+    Matrix logits = matmul(ln_norm, model.lm_head);
+
+    return logits;
+}
 
 int main() {
     mgpt2_model model;
 
     initialize_model(model);
 
-    int num_tokens = 5;
+    std::vector<int> tokens = {18, 7, 4, 26, 8};
 
-    Matrix input(
-        num_tokens,
-        model.hparams.n_embd
-    );
+    std::vector<float> embedding_data =
+        get_embeddings(model, tokens);
 
-    // Fill input with random values
-    for (float& x : input.data) {
-        x = dist(gen);
-    }
+    Matrix input(tokens.size(), model.hparams.n_embd);
+    input.data = embedding_data;
 
-    Matrix output = self_attention(
-        input,
-        model.layers[0],
-        model.hparams.n_embd,
-        model.hparams.n_heads
-    );
+    Matrix logits = forward(input, model);
 
-    std::cout << "\nSelf-attention test complete!\n";
+    std::cout << "Input shape: "
+              << input.rows << "x" << input.cols << '\n';
+
+    std::cout << "Logits shape: "
+              << logits.rows << "x" << logits.cols << '\n';
 
 
+    //for (int i = 0; i < logits.cols; i++) {
+    //    std::cout << i << ": "
+    //              << logits.data[i] << '\n';
+    //}
 
     return 0;
 
