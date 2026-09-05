@@ -206,6 +206,9 @@ void initialize_model(mgpt2_model& model) {
         std::fill(model.layers[i].ln_2_b.begin(), model.layers[i].ln_2_b.end(), 0.0f);
     }
 
+    std::fill(model.ln_f_g.begin(), model.ln_f_g.end(), 1.0f);
+    std::fill(model.ln_f_b.begin(), model.ln_f_b.end(), 0.0f);
+
 }
 
 
@@ -253,7 +256,7 @@ Matrix layer_norm(
         float eps
         ){
 
-    int num_tokens = input.rows / n_embd;
+    int num_tokens = input.rows;
     Matrix output(input.rows, input.cols);
     
     for (int pos = 0; pos < num_tokens; pos ++){
@@ -390,7 +393,7 @@ Matrix add(const Matrix& A, const Matrix& B){
 
 void gelu( Matrix& input) {
     for (float& x : input.data){
-        x = 0.05 * x * (1.0f + std::tanh(
+        x = 0.5f * x * (1.0f + std::tanh(
                     std::sqrt(2.0f / M_PI) * 
                     (x + 0.044715f * x * x * x)
                     )); 
@@ -457,7 +460,7 @@ Matrix forward(const Matrix& input, const mgpt2_model& model) {
         }
 
         // residual 
-        Matrix rs_2 = add(x, ff_out);
+        Matrix rs_2 = add(rs_1, ff_out);
         x = rs_2;
 
     }
@@ -516,15 +519,19 @@ int main() {
 
     initialize_model(model);
 
-    std::vector<int> tokens = {18, 7, 4, 26, 8};
+    std::vector<int> tokens1 = {7, 4, 11, 11, 14};
 
-    for (int step = 0; step < 20 && tokens.size() < model.hparams.n_ctx; step++){
+    /* for (int step = 0; step < 20 && tokens.size() < model.hparams.n_ctx; step++){
         std::vector<float> embedding_data = get_embeddings(model, tokens);
 
         Matrix input(tokens.size(), model.hparams.n_embd);
         input.data = embedding_data;
+        //std::cout << "rows" << input.rows << '\n';
+        //std::cout << "cols" << input.cols << '\n';
 
         Matrix logits = forward(input, model);
+
+        int last_row = logits.rows - 1;
 
         int next_token = argmax(logits);
 
@@ -533,7 +540,30 @@ int main() {
 
         tokens.push_back(next_token);
     }
+*/  
+    std::vector<float> emb1 = get_embeddings(model, tokens1);
 
+    Matrix input1(tokens1.size(), model.hparams.n_embd);
+    input1.data = emb1;
+
+    Matrix logits1 = forward(input1, model);
+
+
+    std::vector<int> tokens2 = {7, 4, 11, 11, 0}; // hella
+    std::vector<float> emb2 = get_embeddings(model, tokens2);
+
+    Matrix input2(tokens2.size(), model.hparams.n_embd);
+    input2.data = emb2;
+
+    Matrix logits2 = forward(input2, model);
+
+    for (int pos = 0; pos < 5; pos++) {
+        float a = logits1.data[pos * logits1.cols];
+        float b = logits2.data[pos * logits2.cols];
+
+        std::cout << "pos " << pos
+                  << ": " << a << " vs " << b << '\n';
+    }   
 
     return 0;
 
