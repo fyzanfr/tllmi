@@ -76,7 +76,7 @@ Matrix transpose(const Matrix& A) {
 
 // define hparams for miniGPT
 struct mgpt2_hparams {
-    int32_t n_vocab  = 1000;
+    int32_t n_vocab  = 27;
     int32_t n_embd   = 128;
     int32_t n_ctx    = 64;
     int32_t n_heads  = 4;
@@ -478,6 +478,39 @@ Matrix forward(const Matrix& input, const mgpt2_model& model) {
     return logits;
 }
 
+int argmax(const Matrix& logits)
+{
+    int last_row = logits.rows - 1;
+
+    int best_token = 0;
+    float best_score = logits.data[last_row * logits.cols];
+
+    for (int col = 1; col < logits.cols; col++) {
+        float score = logits.data[last_row * logits.cols + col];
+
+        if (score > best_score) {
+            best_score = score;
+            best_token = col;
+        }
+    }
+
+    return best_token;
+}
+
+
+char decode_tkn(int token_id){
+    if (token_id >= 0 && token_id < 26) {
+        return 'a' + token_id;
+    }
+
+    if (token_id == 26){
+        return ' ';
+    }
+
+    return '?';
+}
+
+
 int main() {
     mgpt2_model model;
 
@@ -485,25 +518,22 @@ int main() {
 
     std::vector<int> tokens = {18, 7, 4, 26, 8};
 
-    std::vector<float> embedding_data =
-        get_embeddings(model, tokens);
+    for (int step = 0; step < 20 && tokens.size() < model.hparams.n_ctx; step++){
+        std::vector<float> embedding_data = get_embeddings(model, tokens);
 
-    Matrix input(tokens.size(), model.hparams.n_embd);
-    input.data = embedding_data;
+        Matrix input(tokens.size(), model.hparams.n_embd);
+        input.data = embedding_data;
 
-    Matrix logits = forward(input, model);
+        Matrix logits = forward(input, model);
 
-    std::cout << "Input shape: "
-              << input.rows << "x" << input.cols << '\n';
+        int next_token = argmax(logits);
 
-    std::cout << "Logits shape: "
-              << logits.rows << "x" << logits.cols << '\n';
+        char decoded = decode_tkn(next_token);
+        std::cout << decoded << std::flush;
 
+        tokens.push_back(next_token);
+    }
 
-    //for (int i = 0; i < logits.cols; i++) {
-    //    std::cout << i << ": "
-    //              << logits.data[i] << '\n';
-    //}
 
     return 0;
 
