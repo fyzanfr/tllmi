@@ -513,6 +513,38 @@ char decode_tkn(int token_id){
     return '?';
 }
 
+float cross_entropy_loss(const Matrix& logits, const std::vector<int>& targets){
+    float total_loss = 0.0f;
+
+    for ( int pos = 0; pos < logits.rows; pos++){
+        float max_logit = logits.data[pos * logits.cols];
+
+        for ( int col = 1; col < logits.cols; col++){
+            max_logit = std::max(
+                    max_logit,
+                    logits.data[pos * logits.cols + col]
+                    );
+        }
+
+        float sum_exp = 0.0f;
+        for (int col = 0; col < logits.cols; col++) {
+            sum_exp += std::exp(
+                logits.data[pos * logits.cols + col] - max_logit
+            );
+        }
+
+        float target_logit =
+            logits.data[pos * logits.cols + targets[pos]];
+
+        total_loss += 
+            - target_logit
+            + max_logit
+            + std::log(sum_exp);
+    }
+
+    return total_loss / logits.rows;
+}
+
 
 int main() {
     mgpt2_model model;
