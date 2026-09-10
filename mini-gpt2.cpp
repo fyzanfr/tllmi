@@ -580,16 +580,22 @@ int main() {
 
     Matrix logits1 = forward(input1, model);
 
+    std::vector<int> targets = {4, 11, 11, 14, 26};
 
-    std::vector<int> tokens2 = {7, 4, 11, 11, 0}; // hella
-    std::vector<float> emb2 = get_embeddings(model, tokens2);
+    float loss = cross_entropy_loss(logits1, targets);
 
-    Matrix input2(tokens2.size(), model.hparams.n_embd);
-    input2.data = emb2;
+    std::cout << "loss: " << loss << '\n';
 
-    Matrix logits2 = forward(input2, model);
 
-    for (int pos = 0; pos < 5; pos++) {
+    //std::vector<int> tokens2 = {7, 4, 11, 11, 0}; // hella
+    //std::vector<float> emb2 = get_embeddings(model, tokens2);
+
+    //Matrix input2(tokens2.size(), model.hparams.n_embd);
+    //input2.data = emb2;
+
+    //Matrix logits2 = forward(input2, model);
+
+    /*for (int pos = 0; pos < 5; pos++) {
         float a = logits1.data[pos * logits1.cols];
         float b = logits2.data[pos * logits2.cols];
 
@@ -597,6 +603,6 @@ int main() {
                   << ": " << a << " vs " << b << '\n';
     }   
 
+    */
     return 0;
-
 }
